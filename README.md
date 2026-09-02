@@ -3,6 +3,8 @@
 A [Home Assistant](https://www.home-assistant.io/) integration for Life360.
 Creates Device Tracker (`device_tracker`) entities to show where Life360 Members are located.
 
+Based on the work by https://github.com/pnbruckner/ha-life360
+
 ## Current Changes / Improvements
 
 As of HA 2024.2 the built-in Life360 integration was removed due to the integration effectively being broken and seemingly unrepairable.
