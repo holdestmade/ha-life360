@@ -1,4 +1,0 @@
--r requirements.txt
-
-# HA 2026.5.4
-pytest-homeassistant-custom-component==0.13.333
