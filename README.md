@@ -64,12 +64,8 @@ Or you can manually install the software.
    It should then appear as a new integration. Click on it. If necessary, search for "life360".
 
    ```text
-   https://github.com/pnbruckner/ha-life360
+   https://github.com/holdestmade/ha-life360
    ```
-   Or use this button:
-   
-   [![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=pnbruckner&repository=ha-life360&category=integration)
-
 
 1. Download the integration using the appropriate button.
 
@@ -95,12 +91,7 @@ After it has been downloaded you will need to restart Home Assistant.
 
 After installation a Life360 integration entry must be added to Home Assistant.
 This only needs to be done once.
-
-Use this My Button:
-
-[![add integration](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start?domain=life360)
-
-Alternatively, go to Settings -> Devices & services and click the **`+ ADD INTEGRATION`** button.
+Go to Settings -> Devices & services and click the **`+ ADD INTEGRATION`** button.
 Find or search for "Life360", click on it, then follow the prompts.
 
 ### Configuration Options
