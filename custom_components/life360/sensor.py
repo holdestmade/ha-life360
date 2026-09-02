@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
-import logging
 
 from homeassistant.components.sensor import (
     SensorDeviceClass,
@@ -21,16 +19,12 @@ from homeassistant.const import (
     UnitOfSpeed,
 )
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.typing import StateType
 
-from .const import SIGNAL_MEMBERS_CHANGED
 from .coordinator import L360ConfigEntry, MemberDataUpdateCoordinator
-from .entity import Life360MemberEntity
+from .entity import Life360MemberEntity, async_setup_member_entities
 from .helpers import MemberID
-
-_LOGGER = logging.getLogger(__name__)
 
 
 def _place(entity: Life360Sensor) -> str | None:
@@ -138,45 +132,14 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the sensor platform."""
-    coordinator = entry.runtime_data.coordinator
-    mem_coordinator = entry.runtime_data.mem_coordinator
-    entities: dict[MemberID, list[Life360Sensor]] = {}
-
-    async def async_process_data() -> None:
-        """Process Members."""
-        mids = set(coordinator.data.mem_details)
-        cur_mids = set(entities)
-        del_mids = cur_mids - mids
-        add_mids = mids - cur_mids
-
-        if del_mids:
-            old_entities: list[Life360Sensor] = []
-            for mid in del_mids:
-                old_entities.extend(entities.pop(mid))
-            _LOGGER.debug(
-                "Deleting sensors: %s",
-                ", ".join(str(entity) for entity in old_entities),
-            )
-            await asyncio.gather(
-                *(entity.async_remove() for entity in old_entities if entity.enabled)
-            )
-
-        if add_mids:
-            new_entities: list[Life360Sensor] = []
-            for mid in add_mids:
-                mem_entities = [
-                    Life360Sensor(mem_coordinator[mid], mid, description)
-                    for description in SENSOR_DESCRIPTIONS
-                ]
-                entities[mid] = mem_entities
-                new_entities.extend(mem_entities)
-            _LOGGER.debug(
-                "Adding sensors: %s", ", ".join(str(entity) for entity in new_entities)
-            )
-            async_add_entities(new_entities)
-
-    entry.async_on_unload(
-        async_dispatcher_connect(hass, SIGNAL_MEMBERS_CHANGED, async_process_data)
+    async_setup_member_entities(
+        hass,
+        entry,
+        async_add_entities,
+        lambda coordinator, mid: [
+            Life360Sensor(coordinator, mid, description)
+            for description in SENSOR_DESCRIPTIONS
+        ],
     )
 
 

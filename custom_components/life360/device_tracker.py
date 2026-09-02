@@ -33,13 +33,11 @@ from .const import (
     ATTR_REASON,
     ATTR_SPEED,
     ATTR_WIFI_ON,
-    SIGNAL_MEMBERS_CHANGED,
     SIGNAL_UPDATE_LOCATION,
     STATE_DRIVING,
 )
 from .coordinator import L360ConfigEntry
-from .entity import Life360MemberEntity
-from .helpers import MemberID
+from .entity import Life360MemberEntity, async_setup_member_entities
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -50,53 +48,24 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the device tracker platform."""
-    coordinator = entry.runtime_data.coordinator
-    mem_coordinator = entry.runtime_data.mem_coordinator
-    entities: dict[MemberID, Life360DeviceTracker] = {}
-
-    async def async_process_data() -> None:
-        """Process Members."""
-        mids = set(coordinator.data.mem_details)
-        cur_mids = set(entities)
-        del_mids = cur_mids - mids
-        add_mids = mids - cur_mids
-
-        if del_mids:
-            old_entities: list[Life360DeviceTracker] = []
-            names: list[str] = []
-            for mid in del_mids:
-                entity = entities.pop(mid)
-                old_entities.append(entity)
-                names.append(str(entity))
-            _LOGGER.debug("Deleting entities: %s", ", ".join(names))
-            await asyncio.gather(
-                *(entity.async_remove() for entity in old_entities if entity.enabled)
-            )
-
-        if add_mids:
-            new_entities: list[Life360DeviceTracker] = []
-            names = []
-            for mid in add_mids:
-                entity = Life360DeviceTracker(mem_coordinator[mid], mid)
-                entities[mid] = entity
-                new_entities.append(entity)
-                names.append(str(entity))
-            _LOGGER.debug("Adding entities: %s", ", ".join(names))
-            async_add_entities(new_entities)
+    entities = async_setup_member_entities(
+        hass,
+        entry,
+        async_add_entities,
+        lambda coordinator, mid: [Life360DeviceTracker(coordinator, mid)],
+    )
 
     async def update_location(entity_id: str | list[str]) -> None:
         """Request Member location update."""
         await asyncio.gather(
             *(
                 entity.update_location()
-                for entity in entities.values()
+                for mem_entities in entities.values()
+                for entity in mem_entities
                 if entity_id == ENTITY_MATCH_ALL or entity.entity_id in entity_id
             )
         )
 
-    entry.async_on_unload(
-        async_dispatcher_connect(hass, SIGNAL_MEMBERS_CHANGED, async_process_data)
-    )
     entry.async_on_unload(
         async_dispatcher_connect(hass, SIGNAL_UPDATE_LOCATION, update_location)
     )

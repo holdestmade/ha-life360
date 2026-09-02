@@ -121,14 +121,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: L360ConfigEntry) -> bool
 
 
 async def async_remove_config_entry_device(
-    hass: HomeAssistant, entry: L360ConfigEntry, device_entry: dr.DeviceEntry
+    _: HomeAssistant, entry: L360ConfigEntry, device_entry: dr.DeviceEntry
 ) -> bool:
     """Allow removal of a device that is no longer in use.
 
     I.e., the device of a Member that is no longer in any of the known Circles.
     """
+    # The Circles & Members are only known while the config entry is loaded. If it
+    # isn't, allow the removal; the device will be recreated if it is still in use.
+    if not (coordinators := getattr(entry, "runtime_data", None)):
+        return True
     in_use = {(DOMAIN, entry.entry_id)} | {
-        (DOMAIN, mid) for mid in entry.runtime_data.coordinator.data.mem_details
+        (DOMAIN, mid) for mid in coordinators.coordinator.data.mem_details
     }
     return not in_use & device_entry.identifiers
 
