@@ -49,8 +49,9 @@ class Life360SensorEntityDescription(SensorEntityDescription):
     value_fn: Callable[[Life360Sensor], StateType | datetime]
 
 
-# One sensor per attribute of the Member's device_tracker entity. The keys, and hence
-# the entity ID suffixes, match the corresponding device_tracker attribute names.
+# One sensor per attribute of the Member's device_tracker entity. The keys match the
+# corresponding device_tracker attribute names, as do the entity ID suffixes, which come
+# from the names below.
 SENSOR_DESCRIPTIONS: tuple[Life360SensorEntityDescription, ...] = (
     Life360SensorEntityDescription(
         key="address",
@@ -59,7 +60,7 @@ SENSOR_DESCRIPTIONS: tuple[Life360SensorEntityDescription, ...] = (
     ),
     Life360SensorEntityDescription(
         key="at_loc_since",
-        name="At loc since",
+        name="At location since",
         device_class=SensorDeviceClass.TIMESTAMP,
         value_fn=lambda entity: entity.loc.details.at_loc_since if entity.loc else None,
     ),
