@@ -195,11 +195,13 @@ Each of those attributes is also available as its own entity, so it can be used 
 automations & the like, and so its history is recorded separately.
 They are named `Life360 <Member name> <attribute>`, and their entity IDs end with the name of the
 corresponding attribute (e.g., `sensor.life360_my_name_battery_level`.)
+The one exception is the `at_loc_since` attribute, whose entity is named "At location since"
+(e.g., `sensor.life360_my_name_at_location_since`.)
 
 | Attribute | Entity |
 | --- | --- |
 | `address` | `sensor` |
-| `at_loc_since` | `sensor`, device class timestamp |
+| `at_loc_since` | `sensor` ("At location since"), device class timestamp |
 | `battery_charging` | `binary_sensor`, device class battery charging |
 | `battery_level` | `sensor`, device class battery |
 | `driving` | `binary_sensor`, device class moving |

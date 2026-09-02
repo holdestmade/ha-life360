@@ -68,6 +68,11 @@ mem = {
 }
 
 
+# Entity ID suffixes come from the entity names, which do not always match the
+# attribute the entity reports.
+ENTITY_ID_SUFFIXES = {"at_loc_since": "at_location_since"}
+
+
 def _entity_id(
     entity_registry: er.EntityRegistry, domain: str, mid: MemberID, key: str
 ) -> str:
@@ -132,7 +137,8 @@ async def test_member_sensors(
     }
     for key, value in expected.items():
         entity_id = _entity_id(entity_registry, S_DOMAIN, mid, key)
-        assert entity_id == f"{S_DOMAIN}.{name.lower().replace(' ', '_')}_{key}"
+        suffix = ENTITY_ID_SUFFIXES.get(key, key)
+        assert entity_id == f"{S_DOMAIN}.{name.lower().replace(' ', '_')}_{suffix}"
         state = hass.states.get(entity_id)
         assert state, f"No state for {entity_id}"
         assert state.state == value, f"Unexpected state for {entity_id}"
