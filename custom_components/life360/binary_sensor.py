@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
+from dataclasses import dataclass
 from functools import partial
 import logging
 from typing import cast
@@ -12,16 +14,54 @@ from propcache.api import cached_property
 from homeassistant.components.binary_sensor import (
     BinarySensorDeviceClass,
     BinarySensorEntity,
+    BinarySensorEntityDescription,
 )
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import ATTRIBUTION, SIGNAL_ACCT_STATUS
-from .coordinator import CirclesMembersDataUpdateCoordinator, L360ConfigEntry
-from .helpers import AccountID, ConfigOptions
+from .const import ATTRIBUTION, SIGNAL_ACCT_STATUS, SIGNAL_MEMBERS_CHANGED
+from .coordinator import (
+    CirclesMembersDataUpdateCoordinator,
+    L360ConfigEntry,
+    MemberDataUpdateCoordinator,
+)
+from .entity import Life360MemberEntity
+from .helpers import AccountID, ConfigOptions, MemberID
 
 _LOGGER = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True, kw_only=True)
+class Life360BinarySensorEntityDescription(BinarySensorEntityDescription):
+    """Describes a Life360 Member binary sensor entity."""
+
+    value_fn: Callable[[Life360MemberBinarySensor], bool | None]
+
+
+# One binary sensor per boolean attribute of the Member's device_tracker entity. The
+# keys, and hence the entity ID suffixes, match the corresponding device_tracker
+# attribute names.
+MEMBER_SENSOR_DESCRIPTIONS: tuple[Life360BinarySensorEntityDescription, ...] = (
+    Life360BinarySensorEntityDescription(
+        key="battery_charging",
+        name="Battery charging",
+        device_class=BinarySensorDeviceClass.BATTERY_CHARGING,
+        value_fn=lambda entity: entity.loc.battery_charging if entity.loc else None,
+    ),
+    Life360BinarySensorEntityDescription(
+        key="driving",
+        name="Driving",
+        device_class=BinarySensorDeviceClass.MOVING,
+        value_fn=lambda entity: entity.driving if entity.loc else None,
+    ),
+    Life360BinarySensorEntityDescription(
+        key="wifi_on",
+        name="WiFi on",
+        device_class=BinarySensorDeviceClass.CONNECTIVITY,
+        value_fn=lambda entity: entity.loc.wifi_on if entity.loc else None,
+    ),
+)
 
 
 async def async_setup_entry(
@@ -31,7 +71,9 @@ async def async_setup_entry(
 ) -> None:
     """Set up the binary sensory platform."""
     coordinator = entry.runtime_data.coordinator
+    mem_coordinator = entry.runtime_data.mem_coordinator
     entities: dict[AccountID, Life360BinarySensor] = {}
+    mem_entities: dict[MemberID, list[Life360MemberBinarySensor]] = {}
 
     async def process_config(hass: HomeAssistant, entry: L360ConfigEntry) -> None:
         """Add and/or remove binary online sensors."""
@@ -54,8 +96,45 @@ async def async_setup_entry(
             _LOGGER.debug("Adding binary online sensors for: %s", ", ".join(add_aids))
             async_add_entities(new_entities.values())
 
+    async def async_process_data() -> None:
+        """Add and/or remove Member binary sensors."""
+        mids = set(coordinator.data.mem_details)
+        cur_mids = set(mem_entities)
+        del_mids = cur_mids - mids
+        add_mids = mids - cur_mids
+
+        if del_mids:
+            old_entities: list[Life360MemberBinarySensor] = []
+            for mid in del_mids:
+                old_entities.extend(mem_entities.pop(mid))
+            _LOGGER.debug(
+                "Deleting binary sensors: %s",
+                ", ".join(str(entity) for entity in old_entities),
+            )
+            await asyncio.gather(
+                *(entity.async_remove() for entity in old_entities if entity.enabled)
+            )
+
+        if add_mids:
+            new_entities: list[Life360MemberBinarySensor] = []
+            for mid in add_mids:
+                entities_for_mid = [
+                    Life360MemberBinarySensor(mem_coordinator[mid], mid, description)
+                    for description in MEMBER_SENSOR_DESCRIPTIONS
+                ]
+                mem_entities[mid] = entities_for_mid
+                new_entities.extend(entities_for_mid)
+            _LOGGER.debug(
+                "Adding binary sensors: %s",
+                ", ".join(str(entity) for entity in new_entities),
+            )
+            async_add_entities(new_entities)
+
     await process_config(hass, entry)
     entry.async_on_unload(entry.add_update_listener(process_config))
+    entry.async_on_unload(
+        async_dispatcher_connect(hass, SIGNAL_MEMBERS_CHANGED, async_process_data)
+    )
 
 
 class Life360BinarySensor(BinarySensorEntity):
@@ -124,3 +203,30 @@ class Life360BinarySensor(BinarySensorEntity):
 
         self._enabled = not self._enabled
         self.async_write_ha_state()
+
+
+class Life360MemberBinarySensor(Life360MemberEntity, BinarySensorEntity):
+    """Life360 Member binary sensor."""
+
+    entity_description: Life360BinarySensorEntityDescription
+
+    def __init__(
+        self,
+        coordinator: MemberDataUpdateCoordinator,
+        mid: MemberID,
+        description: Life360BinarySensorEntityDescription,
+    ) -> None:
+        """Initialize Life360 Member binary sensor."""
+        self.entity_description = description
+        super().__init__(coordinator, mid)
+        self._attr_unique_id = f"{mid}_{description.key}"
+
+    @property
+    def is_on(self) -> bool | None:
+        """Return if the binary sensor is on."""
+        return self.entity_description.value_fn(self)
+
+    def _update_basic_attrs(self) -> None:
+        """Update basic attributes."""
+        super()._update_basic_attrs()
+        self._attr_name = f"{self._attr_name} {self.entity_description.name}"

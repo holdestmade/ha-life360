@@ -163,6 +163,59 @@ Copy the value from LIFE360_AUTH_TOKEN and enter it into the corresponding box o
 (Note that the "Token type" is almost certainly "Bearer", so leave that default value as-is.)
 You can put whatever you want in the "Account identifier" box.
 
+## Entities
+
+### Device Tracker
+
+One `device_tracker` entity is created per Life360 Member, named `Life360 <Member name>`.
+Its state is the zone the Member is in, `not_home`, or `driving` (see [Show Driving as State](#show-driving-as-state).)
+The Member's details are available as attributes of the entity: `address`, `at_loc_since`, `battery_charging`,
+`battery_level`, `driving`, `gps_accuracy`, `last_seen`, `latitude`, `longitude`, `place`, `speed` & `wifi_on`.
+When a location update is ignored (see [GPS Accuracy Radius Limit](#gps-accuracy-radius-limit)),
+an `ignored_update_reasons` attribute lists why.
+When the Member's location is not known, a `reason` attribute says why.
+
+### Member Sensors
+
+Each of those attributes is also available as its own entity, so it can be used directly in dashboards,
+automations & the like, and so its history is recorded separately.
+They are named `Life360 <Member name> <attribute>`, and their entity IDs end with the name of the
+corresponding attribute (e.g., `sensor.life360_my_name_battery_level`.)
+
+| Attribute | Entity |
+| --- | --- |
+| `address` | `sensor` |
+| `at_loc_since` | `sensor`, device class timestamp |
+| `battery_charging` | `binary_sensor`, device class battery charging |
+| `battery_level` | `sensor`, device class battery |
+| `driving` | `binary_sensor`, device class moving |
+| `gps_accuracy` | `sensor`, device class distance, diagnostic |
+| `ignored_update_reasons` | `sensor`, diagnostic |
+| `last_seen` | `sensor`, device class timestamp |
+| `latitude` | `sensor`, diagnostic |
+| `longitude` | `sensor`, diagnostic |
+| `place` | `sensor` |
+| `reason` | `sensor`, diagnostic |
+| `speed` | `sensor`, device class speed |
+| `wifi_on` | `binary_sensor`, device class connectivity |
+
+Speed & GPS accuracy are shown in the units of the HA unit system (e.g., MPH & feet, or KPH & meters.)
+Any of these entities that are not wanted can be disabled in the entity's settings.
+
+Note that the `address` & `place` attributes of the device tracker entity are not recorded,
+since they can be long and change often.
+The corresponding sensors, though, are recorded like any other entity.
+Use the [recorder](https://www.home-assistant.io/integrations/recorder/) integration's
+`exclude` option if that is not wanted.
+
+These entities show exactly what the corresponding device tracker attributes show.
+E.g., when a location update is ignored, they keep the values from the last accepted update.
+
+### Account Online Binary Sensors
+
+One `binary_sensor` entity is created per Life360 account, named `Life360 online (<account identifier>)`.
+It indicates whether the integration is able to communicate with the Life360 server using that account.
+
 ## Versions
 
 This custom integration supports HomeAssistant versions 2025.11.3 or newer.
