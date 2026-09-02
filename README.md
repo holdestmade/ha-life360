@@ -165,6 +165,20 @@ You can put whatever you want in the "Account identifier" box.
 
 ## Entities
 
+### Devices
+
+Each Life360 Member has their own device, named `Life360 <Member name>`,
+which holds the Member's device tracker & all of their sensors.
+The Life360 service itself has a device, named `Life360`,
+which holds the online binary sensor of each configured account.
+
+Entity IDs & names are the same as they were before devices were used,
+so dashboards, automations & the like do not need to be updated.
+A Member's device is renamed if the Member is renamed in Life360.
+
+If a Member is no longer in any of the known Circles their entities will become unavailable,
+and their device can then be deleted via the integration's device page.
+
 ### Device Tracker
 
 One `device_tracker` entity is created per Life360 Member, named `Life360 <Member name>`.
@@ -213,7 +227,7 @@ E.g., when a location update is ignored, they keep the values from the last acce
 
 ### Account Online Binary Sensors
 
-One `binary_sensor` entity is created per Life360 account, named `Life360 online (<account identifier>)`.
+One `binary_sensor` entity is created per Life360 account, named `Life360 Online (<account identifier>)`.
 It indicates whether the integration is able to communicate with the Life360 server using that account.
 
 ## Versions

@@ -17,10 +17,17 @@ from homeassistant.components.binary_sensor import (
     BinarySensorEntityDescription,
 )
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import ATTRIBUTION, SIGNAL_ACCT_STATUS, SIGNAL_MEMBERS_CHANGED
+from .const import (
+    ATTRIBUTION,
+    DOMAIN,
+    MANUFACTURER,
+    SIGNAL_ACCT_STATUS,
+    SIGNAL_MEMBERS_CHANGED,
+)
 from .coordinator import (
     CirclesMembersDataUpdateCoordinator,
     L360ConfigEntry,
@@ -152,6 +159,12 @@ class Life360BinarySensor(BinarySensorEntity):
         """Initialize binary sensor."""
         self._attr_translation_placeholders = {"acct_id": aid}
         self._attr_unique_id = aid
+        self._attr_device_info = DeviceInfo(
+            entry_type=DeviceEntryType.SERVICE,
+            identifiers={(DOMAIN, coordinator.config_entry.entry_id)},
+            manufacturer=MANUFACTURER,
+            name=MANUFACTURER,
+        )
         self._enabled = (
             ConfigOptions.from_dict(coordinator.config_entry.options)
             .accounts[aid]
@@ -225,8 +238,3 @@ class Life360MemberBinarySensor(Life360MemberEntity, BinarySensorEntity):
     def is_on(self) -> bool | None:
         """Return if the binary sensor is on."""
         return self.entity_description.value_fn(self)
-
-    def _update_basic_attrs(self) -> None:
-        """Update basic attributes."""
-        super()._update_basic_attrs()
-        self._attr_name = f"{self._attr_name} {self.entity_description.name}"

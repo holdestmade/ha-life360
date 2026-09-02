@@ -9,11 +9,13 @@ from typing import cast
 
 from homeassistant.const import ATTR_GPS_ACCURACY
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 
-from .const import ATTR_LAST_SEEN, ATTRIBUTION
+from .const import ATTR_LAST_SEEN, ATTRIBUTION, DOMAIN, MANUFACTURER
 from .coordinator import L360ConfigEntry, MemberDataUpdateCoordinator
 from .helpers import ConfigOptions, LocationData, MemberData, MemberID, NoLocReason
 
@@ -32,6 +34,11 @@ class Life360MemberEntity(
     """
 
     _attr_attribution = ATTRIBUTION
+    _attr_has_entity_name = True
+    # All of a Member's entities belong to the Member's device. Note that
+    # BaseTrackerEntity types _attr_device_info as None, but device tracker entities
+    # can, and do, belong to a device (see, e.g., bmw_connected_drive.)
+    _attr_device_info: DeviceInfo  # type: ignore[assignment]
     # Only one of a Member's entities should log ignored location updates.
     _log_ignored_updates = False
 
@@ -61,15 +68,18 @@ class Life360MemberEntity(
 
     def __repr__(self) -> str:
         """Return identification string."""
-        if name := (
-            (
-                self.registry_entry
-                and (self.registry_entry.name or self.registry_entry.original_name)
+        name = (
+            (self.registry_entry and self.registry_entry.name)
+            or (
+                self.device_entry
+                and (self.device_entry.name_by_user or self.device_entry.name)
             )
-            or self._data.details.name
-        ):
-            return f"{name} ({self.entity_id})"
-        return self.entity_id
+            or self._device_name
+        )
+        # Entities other than the device tracker have a name of their own.
+        if isinstance(entity_name := self.name, str):
+            name = f"{name} {entity_name}"
+        return f"{name} ({self.entity_id})"
 
     @property
     def loc(self) -> LocationData | None:
@@ -167,9 +177,22 @@ class Life360MemberEntity(
 
         super()._handle_coordinator_update()
 
+    @property
+    def _device_name(self) -> str:
+        """Return the name of the Member's device."""
+        return f"Life360 {self._data.details.name}"
+
     def _update_basic_attrs(self) -> None:
         """Update basic attributes."""
-        self._attr_name = f"Life360 {self._data.details.name}"
+        name = self._device_name
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, self._mid)},
+            manufacturer=MANUFACTURER,
+            name=name,
+        )
+        # The device already exists if the Member has been renamed since it was created.
+        if (device := self.device_entry) and device.name != name:
+            dr.async_get(self.hass).async_update_device(device.id, name=name)
 
     def _process_update(self) -> None:
         """Process new Member data."""

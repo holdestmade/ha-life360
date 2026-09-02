@@ -153,7 +153,8 @@ async def async_setup_entry(
             for mid in del_mids:
                 old_entities.extend(entities.pop(mid))
             _LOGGER.debug(
-                "Deleting sensors: %s", ", ".join(str(entity) for entity in old_entities)
+                "Deleting sensors: %s",
+                ", ".join(str(entity) for entity in old_entities),
             )
             await asyncio.gather(
                 *(entity.async_remove() for entity in old_entities if entity.enabled)
@@ -198,8 +199,3 @@ class Life360Sensor(Life360MemberEntity, SensorEntity):
     def native_value(self) -> StateType | datetime:
         """Return the value reported by the sensor."""
         return self.entity_description.value_fn(self)
-
-    def _update_basic_attrs(self) -> None:
-        """Update basic attributes."""
-        super()._update_basic_attrs()
-        self._attr_name = f"{self._attr_name} {self.entity_description.name}"

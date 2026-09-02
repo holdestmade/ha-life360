@@ -17,7 +17,7 @@ import voluptuous as vol
 
 from homeassistant.const import CONF_ENTITY_ID, ENTITY_MATCH_ALL, Platform
 from homeassistant.core import HomeAssistant, ServiceCall, callback
-from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import config_validation as cv, device_registry as dr
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.typing import ConfigType
 
@@ -118,6 +118,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: L360ConfigEntry) -> bool
     process_data()
     entry.async_on_unload(coordinator.async_add_listener(process_data))
     return True
+
+
+async def async_remove_config_entry_device(
+    hass: HomeAssistant, entry: L360ConfigEntry, device_entry: dr.DeviceEntry
+) -> bool:
+    """Allow removal of a device that is no longer in use.
+
+    I.e., the device of a Member that is no longer in any of the known Circles.
+    """
+    in_use = {(DOMAIN, entry.entry_id)} | {
+        (DOMAIN, mid) for mid in entry.runtime_data.coordinator.data.mem_details
+    }
+    return not in_use & device_entry.identifiers
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: L360ConfigEntry) -> bool:

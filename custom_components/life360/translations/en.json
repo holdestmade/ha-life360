@@ -85,7 +85,7 @@
         },
         "binary_sensor": {
             "online": {
-                "name": "Life360 online ({acct_id})"
+                "name": "Online ({acct_id})"
             }
         }
     },

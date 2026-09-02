@@ -20,9 +20,15 @@ from pytest_homeassistant_custom_component.common import (
 from homeassistant.components.binary_sensor import DOMAIN as BS_DOMAIN
 from homeassistant.components.device_tracker import DOMAIN as DT_DOMAIN
 from homeassistant.components.sensor import DOMAIN as S_DOMAIN
-from homeassistant.const import STATE_OFF, STATE_ON, STATE_UNKNOWN, UnitOfSpeed
+from homeassistant.const import (
+    ATTR_FRIENDLY_NAME,
+    STATE_OFF,
+    STATE_ON,
+    STATE_UNKNOWN,
+    UnitOfSpeed,
+)
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import device_registry as dr, entity_registry as er
 from homeassistant.setup import async_setup_component
 from homeassistant.util import dt as dt_util
 from homeassistant.util.unit_conversion import SpeedConverter
@@ -153,6 +159,110 @@ async def test_member_sensors(
         assert state.state == value, f"Unexpected state for {entity_id}"
 
 
+@pytest.mark.parametrize(
+    "MockLife360",
+    [
+        {
+            "aid1": {
+                "get_circles": repeat([cir]),
+                "get_circle_members": repeat([mem]),
+                "get_circle_member": repeat(mem),
+            },
+        },
+    ],
+    indirect=["MockLife360"],
+)
+async def test_devices(
+    hass: HomeAssistant,
+    device_registry: dr.DeviceRegistry,
+    entity_registry: er.EntityRegistry,
+) -> None:
+    """Test each Member, and the Life360 service, has its own device."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        version=Life360ConfigFlow.VERSION,
+        options={
+            "accounts": {
+                "aid1": {"authorization": "auth1", "password": None, "enabled": True}
+            },
+            "driving": False,
+            "driving_speed": None,
+            "max_gps_accuracy": None,
+            "verbosity": 3,
+        },
+    )
+    entry.add_to_hass(hass)
+
+    with assert_setup_component(0, DOMAIN):
+        assert await async_setup_component(hass, DOMAIN, {})
+        await hass.async_block_till_done()
+        await asyncio.sleep(0.1)
+
+    mid = MemberID(cast(str, mem["id"]))
+    name = "Life360 First1 Last1"
+
+    # The Member's device holds the Member's device tracker & all of their sensors.
+    device = device_registry.async_get_device(identifiers={(DOMAIN, mid)})
+    assert device
+    assert device.name == name
+    assert device.manufacturer == "Life360"
+    entity_ids = {
+        entity.entity_id
+        for entity in er.async_entries_for_device(entity_registry, device.id)
+    }
+    dt_entity_id = entity_registry.async_get_entity_id(DT_DOMAIN, DOMAIN, mid)
+    assert dt_entity_id
+    expected_entity_ids = {dt_entity_id} | {
+        _entity_id(entity_registry, domain, mid, key)
+        for domain, keys in (
+            (
+                S_DOMAIN,
+                (
+                    "address",
+                    "at_loc_since",
+                    "battery_level",
+                    "gps_accuracy",
+                    "ignored_update_reasons",
+                    "last_seen",
+                    "latitude",
+                    "longitude",
+                    "place",
+                    "reason",
+                    "speed",
+                ),
+            ),
+            (BS_DOMAIN, ("battery_charging", "driving", "wifi_on")),
+        )
+        for key in keys
+    }
+    assert entity_ids == expected_entity_ids
+
+    # Entity IDs & friendly names should not have changed by moving to devices.
+    state = hass.states.get(dt_entity_id)
+    assert state
+    assert dt_entity_id == f"{DT_DOMAIN}.life360_first1_last1"
+    assert state.attributes[ATTR_FRIENDLY_NAME] == name
+
+    state = hass.states.get(_entity_id(entity_registry, S_DOMAIN, mid, "battery_level"))
+    assert state
+    assert state.attributes[ATTR_FRIENDLY_NAME] == f"{name} Battery level"
+
+    # The Life360 service device holds the account online binary sensors.
+    device = device_registry.async_get_device(identifiers={(DOMAIN, entry.entry_id)})
+    assert device
+    assert device.name == "Life360"
+    assert device.entry_type is dr.DeviceEntryType.SERVICE
+    bs_entity_id = entity_registry.async_get_entity_id(BS_DOMAIN, DOMAIN, "aid1")
+    assert bs_entity_id == f"{BS_DOMAIN}.life360_online_aid1"
+    assert [
+        entity.entity_id
+        for entity in er.async_entries_for_device(entity_registry, device.id)
+    ] == [bs_entity_id]
+    state = hass.states.get(bs_entity_id)
+    assert state
+    assert state.attributes[ATTR_FRIENDLY_NAME] == "Life360 Online (aid1)"
+
+
 # Member data w/ an older last_seen, which the integration ignores.
 old_mem = deepcopy(mem)
 cast(dict[str, Any], old_mem["location"]).update(
@@ -256,3 +366,73 @@ async def test_ignored_update(
     assert state.attributes["address"] == "1 Main St"
     assert state.attributes["battery_level"] == 50
     assert state.attributes["ignored_update_reasons"] == ["last_seen"]
+
+
+renamed_mem = deepcopy(mem)
+renamed_mem["firstName"] = "New1"
+
+
+@pytest.mark.parametrize(
+    "MockLife360",
+    [
+        {
+            "aid1": {
+                "get_circles": repeat([cir]),
+                "get_circle_members": repeat([mem]),
+                "get_circle_member": chain([mem], repeat(renamed_mem)),
+            },
+        },
+    ],
+    indirect=["MockLife360"],
+)
+async def test_member_renamed(
+    hass: HomeAssistant,
+    device_registry: dr.DeviceRegistry,
+    entity_registry: er.EntityRegistry,
+    dt_now: DtNowMock,
+) -> None:
+    """Test Member's device is renamed when the Member is."""
+    dt_now_real, dt_now_mock = dt_now
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        version=Life360ConfigFlow.VERSION,
+        options={
+            "accounts": {
+                "aid1": {"authorization": "auth1", "password": None, "enabled": True}
+            },
+            "driving": False,
+            "driving_speed": None,
+            "max_gps_accuracy": None,
+            "verbosity": 3,
+        },
+    )
+    entry.add_to_hass(hass)
+
+    with assert_setup_component(0, DOMAIN):
+        assert await async_setup_component(hass, DOMAIN, {})
+        await hass.async_block_till_done()
+        await asyncio.sleep(0.1)
+
+    mid = MemberID(cast(str, mem["id"]))
+    device = device_registry.async_get_device(identifiers={(DOMAIN, mid)})
+    assert device
+    assert device.name == "Life360 First1 Last1"
+
+    # Advance "time" so Member coordinator will update w/ the new name.
+    now = dt_now_real() + UPDATE_INTERVAL
+    dt_now_mock.return_value = now
+    async_fire_time_changed(hass, now)
+    await hass.async_block_till_done()
+    await asyncio.sleep(0.1)
+
+    device = device_registry.async_get_device(identifiers={(DOMAIN, mid)})
+    assert device
+    assert device.name == "Life360 New1 Last1"
+
+    # The entity IDs stay the same, but the friendly names follow the device.
+    dt_entity_id = entity_registry.async_get_entity_id(DT_DOMAIN, DOMAIN, mid)
+    assert dt_entity_id == f"{DT_DOMAIN}.life360_first1_last1"
+    state = hass.states.get(dt_entity_id)
+    assert state
+    assert state.attributes[ATTR_FRIENDLY_NAME] == "Life360 New1 Last1"

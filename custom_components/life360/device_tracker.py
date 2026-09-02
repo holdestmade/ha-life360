@@ -105,6 +105,7 @@ async def async_setup_entry(
 class Life360DeviceTracker(Life360MemberEntity, TrackerEntity):
     """Life360 Device Tracker."""
 
+    _attr_name = None
     _attr_translation_key = "tracker"
     _log_ignored_updates = True
     _warned_loc_unknown = False
