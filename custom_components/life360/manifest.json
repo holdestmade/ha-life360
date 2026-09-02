@@ -9,5 +9,5 @@
   "loggers": ["life360"],
   "requirements": ["life360==7.2.0"],
   "single_config_entry": true,
-  "version": "0.11.0"
+  "version": "0.11.1"
 }
