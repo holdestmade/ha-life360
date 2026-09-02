@@ -2,20 +2,30 @@
 
 from __future__ import annotations
 
+import asyncio
+from collections.abc import Callable, Iterable
 from contextlib import suppress
 from copy import deepcopy
 import logging
-from typing import cast
+from typing import TypeVar, cast
 
 from homeassistant.const import ATTR_GPS_ACCURACY
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 
-from .const import ATTR_LAST_SEEN, ATTRIBUTION, DOMAIN, MANUFACTURER
+from .const import (
+    ATTR_LAST_SEEN,
+    ATTRIBUTION,
+    DOMAIN,
+    MANUFACTURER,
+    SIGNAL_MEMBERS_CHANGED,
+)
 from .coordinator import L360ConfigEntry, MemberDataUpdateCoordinator
 from .helpers import ConfigOptions, LocationData, MemberData, MemberID, NoLocReason
 
@@ -46,19 +56,18 @@ class Life360MemberEntity(
         """Initialize Life360 Member entity."""
         super().__init__(coordinator)
         self._mid = mid
-        self._attr_unique_id: str = mid
+        self._attr_unique_id = mid
         self._options = ConfigOptions.from_dict(coordinator.config_entry.options)
         self._prev_data = self._data = deepcopy(coordinator.data)
-        self._update_basic_attrs()
         self._ignored_update_reasons: list[str] = []
-
-        if self._data.loc:
-            address = self._data.loc.details.address
-            if address == self._data.loc.details.place:
-                address = None
-            self._addresses: list[str | None] = [address]
-        else:
-            self._addresses = []
+        self._addresses: list[str | None] = []
+        self._reset_addresses()
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, mid)},
+            manufacturer=MANUFACTURER,
+            name=self._device_name,
+        )
+        self._update_basic_attrs()
 
         self.async_on_remove(
             coordinator.config_entry.add_update_listener(
@@ -76,9 +85,12 @@ class Life360MemberEntity(
             )
             or self._device_name
         )
-        # Entities other than the device tracker have a name of their own.
-        if isinstance(entity_name := self.name, str):
-            name = f"{name} {entity_name}"
+        # Entities other than the device tracker have a name of their own. Get it
+        # from the entity description; reading self.name would cache it, possibly
+        # before the entity has been added to a platform.
+        description = getattr(self, "entity_description", None)
+        if description is not None and isinstance(description.name, str):
+            name = f"{name} {description.name}"
         return f"{name} ({self.entity_id})"
 
     @property
@@ -183,20 +195,28 @@ class Life360MemberEntity(
         return f"Life360 {self._data.details.name}"
 
     def _update_basic_attrs(self) -> None:
-        """Update basic attributes."""
+        """Update attributes that follow the Member's details."""
+        # The device exists once the entity has been added, and needs to be renamed if
+        # the Member has been renamed since then.
         name = self._device_name
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, self._mid)},
-            manufacturer=MANUFACTURER,
-            name=name,
-        )
-        # The device already exists if the Member has been renamed since it was created.
         if (device := self.device_entry) and device.name != name:
             dr.async_get(self.hass).async_update_device(device.id, name=name)
+
+    def _reset_addresses(self) -> None:
+        """Reset where the Member is located per the current data."""
+        if not self._data.loc:
+            self._addresses = []
+            return
+        address = self._data.loc.details.address
+        if address == self._data.loc.details.place:
+            address = None
+        self._addresses = [address]
 
     def _process_update(self) -> None:
         """Process new Member data."""
         if not self._data.loc or not self._prev_data.loc:
+            # There is nothing to combine the new address, if any, with.
+            self._reset_addresses()
             self._prev_data = self._data
             return
 
@@ -269,3 +289,56 @@ class Life360MemberEntity(
 
         # Re-process current data.
         self._handle_coordinator_update(config_changed=True)
+
+
+_MemberEntityT = TypeVar("_MemberEntityT", bound=Life360MemberEntity)
+
+
+@callback
+def async_setup_member_entities(
+    hass: HomeAssistant,
+    entry: L360ConfigEntry,
+    async_add_entities: AddEntitiesCallback,
+    create_entities: Callable[
+        [MemberDataUpdateCoordinator, MemberID], list[_MemberEntityT]
+    ],
+) -> dict[MemberID, list[_MemberEntityT]]:
+    """Create & delete a platform's entities as Members come & go.
+
+    Returns the platform's entities, keyed by Member ID, which is kept up to date.
+    """
+    coordinator = entry.runtime_data.coordinator
+    mem_coordinator = entry.runtime_data.mem_coordinator
+    entities: dict[MemberID, list[_MemberEntityT]] = {}
+
+    def names(entities: Iterable[_MemberEntityT]) -> str:
+        """Return the names of the entities, for logging."""
+        return ", ".join(str(entity) for entity in entities)
+
+    async def async_process_data() -> None:
+        """Process Members."""
+        mids = set(coordinator.data.mem_details)
+        del_mids = set(entities) - mids
+        add_mids = mids - set(entities)
+
+        if del_mids:
+            old_entities = [entity for mid in del_mids for entity in entities.pop(mid)]
+            if _LOGGER.isEnabledFor(logging.DEBUG):
+                _LOGGER.debug("Deleting entities: %s", names(old_entities))
+            await asyncio.gather(
+                *(entity.async_remove() for entity in old_entities if entity.enabled)
+            )
+
+        if add_mids:
+            new_entities: list[_MemberEntityT] = []
+            for mid in add_mids:
+                entities[mid] = create_entities(mem_coordinator[mid], mid)
+                new_entities.extend(entities[mid])
+            if _LOGGER.isEnabledFor(logging.DEBUG):
+                _LOGGER.debug("Adding entities: %s", names(new_entities))
+            async_add_entities(new_entities)
+
+    entry.async_on_unload(
+        async_dispatcher_connect(hass, SIGNAL_MEMBERS_CHANGED, async_process_data)
+    )
+    return entities
