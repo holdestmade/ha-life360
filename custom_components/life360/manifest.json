@@ -1,7 +1,7 @@
 {
   "domain": "life360",
   "name": "Life360",
-  "codeowners": ["@pnbruckner"],
+  "codeowners": ["@holdestmade"],
   "config_flow": true,
   "documentation": "https://github.com/holdestmade/ha-life360/blob/master/README.md",
   "iot_class": "cloud_polling",
