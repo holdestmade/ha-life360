@@ -7,6 +7,7 @@ from aiohttp import ClientTimeout
 DOMAIN = "life360"
 
 ATTRIBUTION = "Data provided by life360.com"
+MANUFACTURER = "Life360"
 COMM_MAX_RETRIES = 4
 COMM_TIMEOUT = ClientTimeout(sock_connect=15, total=60)
 LOGIN_ERROR_RETRY_DELAY = 5 * 60
